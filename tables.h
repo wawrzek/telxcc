@@ -1,4 +1,4 @@
-/*
+/*!
 (c) 2011-2012 Petr Kutalek, Forers, s. r. o.: telxcc
 
 Some portions/inspirations:
@@ -238,19 +238,21 @@ const uint8_t PARITY_8[256] = {
 };
 
 const char* COLOURS[8] = {
-	// black, red, green, yellow, blue, magenta, cyan, white
+	// black,  red,       green,     yellow,    blue,      magenta,   cyan,      white
 	"#000000", "#ff0000", "#00ff00", "#ffff00", "#0000ff", "#ff00ff", "#00ffff", "#ffffff"
 };
 
 typedef enum {
 	DATA_UNIT_EBU_TELETEXT_NONSUBTITLE = 0x02,
 	DATA_UNIT_EBU_TELETEXT_SUBTITLE = 0x03,
-	DATA_UNIT_EBU_TELETEXT_INVERTED = 0x0c
+	DATA_UNIT_EBU_TELETEXT_INVERTED = 0x0c,
+	DATA_UNIT_VPS = 0xc3,
+	DATA_UNIT_CLOSED_CAPTIONING = 0xc5
 } data_unit_ebu_teletext_t;
 
 typedef enum {
 	TRANSMISSION_MODE_PARALLEL = 0,
-	TRANSMISSION_MODE_SERIAL
+	TRANSMISSION_MODE_SERIAL = 1
 } transmission_mode_t;
 
 #endif

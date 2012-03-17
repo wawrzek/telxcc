@@ -31,19 +31,20 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
     telxcc - teletext closed captioning decoder
     (c) Petr Kutalek <petr.kutalek@forers.com>, 2011-2012; Licensed under the GPL.
     Please consider making a Paypal donation to support our free GNU/GPL software: http://fore.rs/donate/telxcc
-    Built on Feb 26 2012
+    Built on Mar 17 2012
     
     Usage: telxcc [-h] | [-p PAGE] [-t TID] [-o OFFSET] [-n] [-1] [-c] [-v]
       STDIN       transport stream
       STDOUT      subtitles in SubRip SRT file format (UTF-8 encoded)
       -h          this help text
-      -p PAGE     teletext page number carrying closed captioning (default: 888)
+      -p PAGE     teletext page number carrying closed captioning (default: auto)
+                    (usually CZ=888, DE=150, SE=199, NO=777, UK=888 etc.)
       -t TID      transport stream PID of teletext data sub-stream (default: auto)
       -o OFFSET   subtitles offset in seconds (default: 0.0)
       -n          do not print UTF-8 BOM characters at the beginning of output
       -1          produce at least one (dummy) frame
       -c          output colour information in font HTML tags
-                  (colours are supported by MPC, MPC HC, VLC, KMPlayer, VSFilter, ffdshow etc.)
+                    (colours are supported by MPC, MPC HC, VLC, KMPlayer, VSFilter, ffdshow etc.)
       -v          be verbose (default: verboseness turned off, without being quiet)
 
 ## Usage example
@@ -52,12 +53,15 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
     telxcc - teletext closed captioning decoder
     (c) Petr Kutalek <petr.kutalek@forers.com>, 2011-2012; Licensed under the GPL.
     Please consider making a Paypal donation to support our free GNU/GPL software: http://fore.rs/donate/telxcc
-    Built on Feb 26 2012
+    Built on Mar 17 2012
     
     INFO: No teletext PID specified, first received suitable stream PID is 576 (0x240), not guaranteed
-    INFO: Programme Identification Data = "NRK TV              "
+    INFO: PID 0xbd PTS available
+    INFO: Programme Identification Data = NRK TV              
     INFO: Universal Time Co-ordinated = Wed Feb 15 19:14:04 2012
-    INFO: Done (17745 teletext packets processed, 46 SRT frames written)
+    INFO: Transmission mode = serial
+    INFO: There were some CC data carried via pages: 333 444 777 
+    INFO: Done (562995 teletext packets processed, 253 SRT frames written)
     
     $ _
 

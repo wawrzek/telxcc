@@ -1,4 +1,4 @@
-/*
+/*!
 (c) 2011-2012 Petr Kutalek, Forers, s. r. o.: telxcc
 
 Some portions/inspirations:
@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
 I would like to thank:
 	David Liontooth <lionteeth@cogweb.net> for providing me with Swedish and Norwegian TS samples and patient testing
 	Professor Francis F Steen and his team from UCLA for contribution
+	Laurent Debacker (https://github.com/debackerl) for bug fixes
 
 telxcc conforms to ETSI 300 706 Presentation Level 1.5:
 	Presentation Level 1 defines the basic Teletext page, characterised by the use of spacing attributes only
@@ -62,6 +63,9 @@ Further Documentation:
 #include <inttypes.h>
 #include "tables.h"
 
+// size of a TS packet in bytes
+#define TS_PACKET_SIZE 188
+
 typedef struct {
 	uint8_t _clock_run_in; // not needed
 	uint8_t _framing_code; // not needed, ETSI 300 706: const 0xe4
@@ -76,7 +80,7 @@ typedef struct {
 	uint8_t tainted; // 1 = text variable contains any data
 } teletext_page_t;
 
-// be verbose
+// be verbose?
 uint16_t config_verbose = 0;
 #define VERBOSE if (config_verbose > 0)
 
@@ -95,10 +99,10 @@ uint8_t config_colours = 0;
 // SRT frames produced
 uint32_t frames_produced = 0;
 
-// Subtitle type pages bitmap
+// subtitle type pages bitmap
 uint8_t cc_map[256] = { 0 };
 
-// Global TS PCR value
+// global TS PCR value
 uint32_t global_timestamp = 0;
 
 // ETS 300 706, chapter 8.2
@@ -112,7 +116,7 @@ inline uint32_t unham_24_18(uint32_t a) {
 	return (((a & 0x04) >> 2) | ((a & 0x70) >> 3) | ((a & 0x7f00) >> 4) | ((a & 0x7f0000) >> 5));
 }
 
-void timestamp_to_srttime(uint64_t timestamp, char *buffer) {
+inline void timestamp_to_srttime(uint64_t timestamp, char *buffer) {
 	uint64_t p = timestamp;
 	uint8_t h = p / 3600000;
 	uint8_t m = p / 60000 - 60 * h;
@@ -187,7 +191,8 @@ void process_page(const teletext_page_t *page_buffer) {
 	for (uint8_t row = 1; row < 25; row++) {
 		uint8_t font_tag_opened = 0;
 		uint8_t in_boxed_area = 0;
-		uint8_t foreground_color = 7;
+		// ETS 300 706, chapter 12.2: Alpha White ("Set-After") - Start-of-row default condition.
+		uint8_t foreground_color = 0x7;
 
 		// skip empty lines
 		uint8_t line_is_empty = 1;
@@ -229,6 +234,8 @@ void process_page(const teletext_page_t *page_buffer) {
 						foreground_color = v;
 					}
 				}
+				// ETS 300 706, chapter 12.2: Unless operating in "Hold Mosaics" mode,
+				// each character space occupied by a spacing attribute is displayed as a SPACE. 
 				else v = 32;
 			}
 
@@ -290,7 +297,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 			fprintf(stderr, "INFO: No teletext page specified, first received suitable page is %03x, not guaranteed\n", config_page);
 		}
 	}
-	
+
 	if ((y == 0) && (data_unit_id == DATA_UNIT_EBU_TELETEXT_SUBTITLE)) {
  		// Page number and control bits
 		uint16_t page_number = (m << 8) | (unham_8_4(packet->data[1]) << 4) | unham_8_4(packet->data[0]);
@@ -318,7 +325,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 		// Now we have the begining of page transmittion; if there is page_buffer pending, process it
 		if (page_buffer.tainted > 0) {
 			// it would be nice, if subtitle hides on previous video frame, so we contract 40 ms (1 frame @25 fps)
-			page_buffer.hide_timestamp = timestamp - 40;
+			page_buffer.hide_timestamp = timestamp - (1000 / 25);
 			process_page(&page_buffer);
 		}
 
@@ -449,22 +456,36 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 }
 
 void process_pes_packet(uint8_t *buffer, uint16_t size) {
+	if (size < 6) return;
+
 	// Packetized Elementary Stream (PES) 32-bit start code
 	uint64_t pes_prefix = (buffer[0] << 16) | (buffer[1] << 8) | buffer[2];
 	uint8_t pes_stream_id = buffer[3];
-	uint16_t pes_packet_length = (buffer[4] << 8) | buffer[5];
 
 	// check for PES header
 	if (pes_prefix != 0x000001) return;
-
+	
 	// stream_id is not "Private Stream 1" (0xbd)
 	if (pes_stream_id != 0xbd) return;
 
-	uint32_t t = 0;
+	// PES packet length
+	// ETSI EN 301 775 V1.2.1 (2003-05) chapter 4.3: (N × 184) - 6
+	uint16_t pes_packet_length = (buffer[4] << 8) | buffer[5];
+	// Can be zero. If the PES packet length is set to zero, the PES packet can be of any length.
+	// A value of zero for the PES packet length can be used only when the PES packet payload is a video elementary stream.
+	if (pes_packet_length == 0) return;
+		
+	uint8_t optional_pes_header_included = 0;
+	uint16_t optional_pes_header_length = 0;
+	// optional PES header marker bits (10.. ....)
+	if ((buffer[6] & 0xc0) == 0x80) {
+		optional_pes_header_included = 1;
+		optional_pes_header_length = buffer[8];
+	}
 
 	static uint8_t using_pts = 255;
 	if (using_pts == 255) {
-		if ((buffer[7] & 0x80) > 0) {
+		if ((optional_pes_header_included == 1) && ((buffer[7] & 0x80) > 0)) {
 			using_pts = 1;
 			VERBOSE fprintf(stderr, "INFO: PID 0xbd PTS available\n");
 		} else {
@@ -473,8 +494,10 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 		}
 	}
 
+	uint32_t t = 0;
 	// If there is no PTS available, use global PCR
-	if (using_pts > 0) {
+	if (using_pts == 0) t = global_timestamp;
+	else {
 		// PTS is 33 bits wide, however, timestamp in ms fits into 32 bits nicely (PTS/90)
 		// presentation and decoder timestamps use the 90 KHz clock, hence PTS/90 = [ms]
 		uint64_t pts = 0;
@@ -487,9 +510,6 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 		pts |= (buffer[12] << 7);
 		pts |= ((buffer[13] & 0xfe) >> 1);
 		t = pts / 90;
-	}
-	else {
-		t = global_timestamp;
 	}
 
 	static int64_t delta = 0;
@@ -504,23 +524,25 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 	t0 = t;
 	uint64_t timestamp = t + delta;
 
-	// Skip PES header and process each 46-byte teletext packet
-	for (uint16_t i = buffer[8] + 10; i < (pes_packet_length - 46); i += 46) {
-		uint8_t data_unit_id = buffer[i];
-		uint8_t data_unit_len = buffer[i + 1];
+	// skip optional PES header and process each 46-byte teletext packet
+	uint16_t i = 7;
+	if (optional_pes_header_included) i += 3 + optional_pes_header_length;
+	while (i <= pes_packet_length) {
+		uint8_t data_unit_id = buffer[i++];
+		uint8_t data_unit_len = buffer[i++];
 
-		// vbi units id 0xff should be ignored
-		//if (data_unit_id == 0xff) continue;
-		if ((data_unit_id != DATA_UNIT_EBU_TELETEXT_NONSUBTITLE) && (data_unit_id != DATA_UNIT_EBU_TELETEXT_SUBTITLE)) continue;
+		if ((data_unit_id == DATA_UNIT_EBU_TELETEXT_NONSUBTITLE) || (data_unit_id == DATA_UNIT_EBU_TELETEXT_SUBTITLE)) {
+			// teletext payload has always size 44 bytes
+			if (data_unit_len == 0x2c) {
+				// reverse endianess (via lookup table), ETS 300 706, chapter 7.1
+				for (uint8_t j = 0; j < data_unit_len; j++)
+					buffer[i + j] = REVERSE[buffer[i + j]];
+				
+				process_telx_packet(data_unit_id, (teletext_packet_payload_t *)&buffer[i], timestamp);
+			}
+		}
 
-		// teletext payload has always size 44 bytes
-		if (data_unit_len != 0x2c) continue;
-
-		// reverse endianess (via lookup table), ETS 300 706, chapter 7.1
-		for (uint8_t j = 0; j < data_unit_len; j++)
-			buffer[i + 2 + j] = REVERSE[buffer[i + 2 + j]];
-
-		process_telx_packet(data_unit_id, (teletext_packet_payload_t *)&buffer[i + 2], timestamp);
+		i += data_unit_len;
 	}
 }
 
@@ -552,21 +574,22 @@ int main(int argc, const char *argv[]) {
 			fprintf(stderr, "  STDOUT      subtitles in SubRip SRT file format (UTF-8 encoded)\n");
 			fprintf(stderr, "  -h          this help text\n");
 			fprintf(stderr, "  -p PAGE     teletext page number carrying closed captioning (default: auto)\n");
+			fprintf(stderr, "                (usually CZ=888, DE=150, SE=199, NO=777, UK=888 etc.)\n");
 			fprintf(stderr, "  -t TID      transport stream PID of teletext data sub-stream (default: auto)\n");
 			fprintf(stderr, "  -o OFFSET   subtitles offset in seconds (default: 0.0)\n");
 			fprintf(stderr, "  -n          do not print UTF-8 BOM characters at the beginning of output\n");
 			fprintf(stderr, "  -1          produce at least one (dummy) frame\n");
 			fprintf(stderr, "  -c          output colour information in font HTML tags\n");
-			fprintf(stderr, "              (colours are supported by MPC, MPC HC, VLC, KMPlayer, VSFilter, ffdshow etc.)\n");
+			fprintf(stderr, "                (colours are supported by MPC, MPC HC, VLC, KMPlayer, VSFilter, ffdshow etc.)\n");
 			fprintf(stderr, "  -v          be verbose (default: verboseness turned off, without being quiet)\n");
 			fprintf(stderr, "\n");
 			exit(EXIT_SUCCESS);
 		}
-		else if (strcmp(argv[i], "-p") == 0)
+		else if ((strcmp(argv[i], "-p") == 0) && (argc > i + 1))
 			config_page = atoi(argv[++i]);
-		else if (strcmp(argv[i], "-t") == 0)
+		else if ((strcmp(argv[i], "-t") == 0) && (argc > i + 1))
 			config_tid = atoi(argv[++i]);
-		else if (strcmp(argv[i], "-o") == 0)
+		else if ((strcmp(argv[i], "-o") == 0) && (argc > i + 1))
 			config_offset = atof(argv[++i]);
 		else if (strcmp(argv[i], "-n") == 0)
 			config_bom = 0;
@@ -619,22 +642,19 @@ int main(int argc, const char *argv[]) {
 	uint32_t packet_counter = 0;
 
 	// TS packet buffer
-	uint8_t ts_buffer[188];
+	uint8_t ts_buffer[TS_PACKET_SIZE];
 
 	// 255 means not set yet
 	uint8_t continuity_counter = 255;
 
 	// PES packet buffer
-	#define PES_BUFFER_SIZE 1472
+	#define PES_BUFFER_SIZE 4096
 	uint8_t pes_buffer[PES_BUFFER_SIZE] = { 0 };
 	uint16_t pes_counter = 0;
 
 	// reading input
-	while (!feof(stdin) && (exit_request == 0)) {
-		size_t n = fread(&ts_buffer, 1, 188, stdin);
-		if (n == 0) continue;
-
-		// Transport Stream Header
+	while ((exit_request == 0) && (fread(&ts_buffer, 1, TS_PACKET_SIZE, stdin) == TS_PACKET_SIZE)) {
+    	// Transport Stream Header
 		uint8_t ts_sync = ts_buffer[0];
 		uint8_t ts_transport_error = (ts_buffer[1] & 0x80) >> 7;
 		uint8_t ts_payload_unit_start = (ts_buffer[1] & 0x40) >> 6;
@@ -686,14 +706,16 @@ int main(int argc, const char *argv[]) {
 		// Choose first suitable PID if not set
 		if (config_tid == 0) {
 			if ((ts_payload_unit_start > 0) && ((ts_buffer[4] == 0x00) && (ts_buffer[5] == 0x00) && (ts_buffer[6] == 0x01) && (ts_buffer[7] == 0xbd))) {
-					config_tid = ts_pid;
-					fprintf(stderr, "INFO: No teletext PID specified, first received suitable stream PID is %"PRIu16" (0x%x), not guaranteed\n", config_tid, config_tid);
+				config_tid = ts_pid;
+				fprintf(stderr, "INFO: No teletext PID specified, first received suitable stream PID is %"PRIu16" (0x%x), not guaranteed\n", config_tid, config_tid);
 			}
 			else continue;
 		}
 
 		// TS continuity check
-		if (continuity_counter == 255) continuity_counter = ts_continuity_counter;
+		if (continuity_counter == 255) {
+			continuity_counter = ts_continuity_counter;
+		}
 		else {
 			if (af_discontinuity == 0) {
 				continuity_counter = (continuity_counter + 1) % 16;
@@ -727,13 +749,12 @@ int main(int argc, const char *argv[]) {
 	VERBOSE {
 		if (frames_produced == 0) fprintf(stderr, "INFO: No frames produced. CC teletext page number was probably wrong.\n");
 		fprintf(stderr, "INFO: There were some CC data carried via pages: ");
-		// We ignore i = 0xff, because 0xff are teletext ending frames
-		for (uint16_t i = 0; i < 255; i++) {
+		// We ignore i = 0xff, because 0xffs are teletext ending frames
+		for (uint16_t i = 0; i < 255; i++)
 			for (uint8_t j = 0; j < 8; j++) {
 				uint8_t v = cc_map[i] & (1 << j);
 				if (v > 0) fprintf(stderr, "%03x ", ((j + 1) << 8) | i);
 			}
-		}
 		fprintf(stderr, "\n");
 	}
 
