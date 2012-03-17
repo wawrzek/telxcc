@@ -66,7 +66,7 @@ clean :
 %.mkv : %.vob %.srt %.jpg
 	mkvmerge \
 	    --default-language cze --title "DVB-T" \
-	    --default-duration 0:25fps --default-duration 1:25fps --aspect-ratio-factor 0:$(PARMKV) $(@:.mkv=.vob) \
+	    --default-duration 0:25fps --aspect-ratio-factor 0:$(PARMKV) $(@:.mkv=.vob) \
 	    --default-track 0:0 --sub-charset 0:utf-8 $(@:.mkv=.srt) \
 	    --attachment-mime-type image/jpeg --attachment-name cover.jpg --attach-file $(@:.mkv=.jpg) \
 	    -o $@

@@ -2,7 +2,7 @@
 
 telxcc is utility extracting teletext Closed Captions from Transport Streams (DVB-T) into SRT text files.
 
-telxcc is 
+telxcc is
 
 * tiny and lightweight (few KiBs binary, no lib dependencies)
 * multiplatform (Mac, Linux, Windows)
@@ -32,7 +32,7 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
     (c) Petr Kutalek <petr.kutalek@forers.com>, 2011-2012; Licensed under the GPL.
     Please consider making a Paypal donation to support our free GNU/GPL software: http://fore.rs/donate/telxcc
     Built on Mar 17 2012
-    
+
     Usage: telxcc [-h] | [-p PAGE] [-t TID] [-o OFFSET] [-n] [-1] [-c] [-v]
       STDIN       transport stream
       STDOUT      subtitles in SubRip SRT file format (UTF-8 encoded)
@@ -54,20 +54,20 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
     (c) Petr Kutalek <petr.kutalek@forers.com>, 2011-2012; Licensed under the GPL.
     Please consider making a Paypal donation to support our free GNU/GPL software: http://fore.rs/donate/telxcc
     Built on Mar 17 2012
-    
+
     INFO: No teletext PID specified, first received suitable stream PID is 576 (0x240), not guaranteed
     INFO: PID 0xbd PTS available
-    INFO: Programme Identification Data = NRK TV              
+    INFO: Programme Identification Data = NRK TV
     INFO: Universal Time Co-ordinated = Wed Feb 15 19:14:04 2012
     INFO: Transmission mode = serial
-    INFO: There were some CC data carried via pages: 333 444 777 
+    INFO: There were some CC data carried via pages: 333 444 777
     INFO: Done (562995 teletext packets processed, 253 SRT frames written)
-    
+
     $ _
 
 ## Other notes
 
-There are some notes on my DVB-T capture and processing chains in notes folder. 
+There are some notes on my DVB-T capture and processing chains in notes folder.
 
 * Task are parallelized (even over multiple files processing -- eg. encoding audio from file 1.ts and video from file 2.ts)
 * MP4 output files are fully iPhone/iPad (and also Mac OS X) compatible *including* CC(!) and HTTP streaming (iOS >= 5 and (iPhone >= 4 or iPad 2))

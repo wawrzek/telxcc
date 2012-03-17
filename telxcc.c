@@ -66,6 +66,9 @@ Further Documentation:
 // size of a TS packet in bytes
 #define TS_PACKET_SIZE 188
 
+// size of a TS packet payload in bytes
+#define TS_PACKET_PAYLOAD_SIZE 184
+
 typedef struct {
 	uint8_t _clock_run_in; // not needed
 	uint8_t _framing_code; // not needed, ETSI 300 706: const 0xe4
@@ -159,7 +162,7 @@ void process_page(const teletext_page_t *page_buffer) {
 #ifdef DEBUG
 	for (uint8_t row = 1; row < 25; row++) {
 		fprintf(stdout, "DEBUG[%02u]: ", row);
-		for (uint8_t col = 0; col < 40; col++) fprintf(stdout, "%02x ", page_buffer->text[row][col]);
+		for (uint8_t col = 0; col < 40; col++) fprintf(stdout, "%3x ", page_buffer->text[row][col]);
 		fprintf(stdout, "\n");
 	}
 	fprintf(stdout, "\n");
@@ -235,7 +238,7 @@ void process_page(const teletext_page_t *page_buffer) {
 					}
 				}
 				// ETS 300 706, chapter 12.2: Unless operating in "Hold Mosaics" mode,
-				// each character space occupied by a spacing attribute is displayed as a SPACE. 
+				// each character space occupied by a spacing attribute is displayed as a SPACE.
 				else v = 32;
 			}
 
@@ -325,7 +328,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 		// Now we have the begining of page transmittion; if there is page_buffer pending, process it
 		if (page_buffer.tainted > 0) {
 			// it would be nice, if subtitle hides on previous video frame, so we contract 40 ms (1 frame @25 fps)
-			page_buffer.hide_timestamp = timestamp - (1000 / 25);
+			page_buffer.hide_timestamp = timestamp - 40;
 			process_page(&page_buffer);
 		}
 
@@ -464,19 +467,19 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 
 	// check for PES header
 	if (pes_prefix != 0x000001) return;
-	
+
 	// stream_id is not "Private Stream 1" (0xbd)
 	if (pes_stream_id != 0xbd) return;
 
 	// PES packet length
 	// ETSI EN 301 775 V1.2.1 (2003-05) chapter 4.3: (N × 184) - 6 + 6 B header
 	uint16_t pes_packet_length = 6 + ((buffer[4] << 8) | buffer[5]);
-	// Can be zero. If the PES packet length is set to zero, the PES packet can be of any length.
+	// Can be zero. If the "PES packet length" is set to zero, the PES packet can be of any length.
 	// A value of zero for the PES packet length can be used only when the PES packet payload is a video elementary stream.
 	if (pes_packet_length == 6) return;
 
 	// truncate incomplete PES packets
-	if (pes_packet_length > size) pes_packet_length = size;		
+	if (pes_packet_length > size) pes_packet_length = size;
 
 	uint8_t optional_pes_header_included = 0;
 	uint16_t optional_pes_header_length = 0;
@@ -538,9 +541,8 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 			// teletext payload has always size 44 bytes
 			if (data_unit_len == 0x2c) {
 				// reverse endianess (via lookup table), ETS 300 706, chapter 7.1
-				for (uint8_t j = 0; j < data_unit_len; j++)
-					buffer[i + j] = REVERSE[buffer[i + j]];
-				
+				for (uint8_t j = 0; j < data_unit_len; j++) buffer[i + j] = REVERSE[buffer[i + j]];
+
 				process_telx_packet(data_unit_id, (teletext_packet_payload_t *)&buffer[i], timestamp);
 			}
 		}
@@ -582,7 +584,7 @@ int main(int argc, const char *argv[]) {
 			fprintf(stderr, "  -o OFFSET   subtitles offset in seconds (default: 0.0)\n");
 			fprintf(stderr, "  -n          do not print UTF-8 BOM characters at the beginning of output\n");
 			fprintf(stderr, "  -1          produce at least one (dummy) frame\n");
-			fprintf(stderr, "  -c          output colour information in font HTML tags\n");
+			fprintf(stderr, "  -c          output colour information in <font/> HTML tags\n");
 			fprintf(stderr, "                (colours are supported by MPC, MPC HC, VLC, KMPlayer, VSFilter, ffdshow etc.)\n");
 			fprintf(stderr, "  -v          be verbose (default: verboseness turned off, without being quiet)\n");
 			fprintf(stderr, "\n");
@@ -741,9 +743,9 @@ int main(int argc, const char *argv[]) {
 		if (ts_payload_unit_start > 0) pes_counter = 0;
 
 		// add pes data to buffer
-		if (pes_counter < (PES_BUFFER_SIZE - 184)) {
-			memcpy(&pes_buffer[pes_counter], &ts_buffer[4], 184);
-			pes_counter += 184;
+		if (pes_counter < (PES_BUFFER_SIZE - TS_PACKET_PAYLOAD_SIZE)) {
+			memcpy(&pes_buffer[pes_counter], &ts_buffer[4], TS_PACKET_PAYLOAD_SIZE);
+			pes_counter += TS_PACKET_PAYLOAD_SIZE;
 			packet_counter++;
 		}
 		else VERBOSE fprintf(stderr, "WARNING: pes packet size exceeds pes_buffer size, probably not teletext stream\n");
