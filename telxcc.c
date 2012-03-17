@@ -470,7 +470,7 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 
 	// PES packet length
 	// ETSI EN 301 775 V1.2.1 (2003-05) chapter 4.3: (N × 184) - 6 + 6 B header
-	uint16_t pes_packet_length = 6 + (buffer[4] << 8) | buffer[5];
+	uint16_t pes_packet_length = 6 + ((buffer[4] << 8) | buffer[5]);
 	// Can be zero. If the PES packet length is set to zero, the PES packet can be of any length.
 	// A value of zero for the PES packet length can be used only when the PES packet payload is a video elementary stream.
 	if (pes_packet_length == 6) return;
