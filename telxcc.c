@@ -469,12 +469,15 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 	if (pes_stream_id != 0xbd) return;
 
 	// PES packet length
-	// ETSI EN 301 775 V1.2.1 (2003-05) chapter 4.3: (N × 184) - 6
-	uint16_t pes_packet_length = (buffer[4] << 8) | buffer[5];
+	// ETSI EN 301 775 V1.2.1 (2003-05) chapter 4.3: (N × 184) - 6 + 6 B header
+	uint16_t pes_packet_length = 6 + (buffer[4] << 8) | buffer[5];
 	// Can be zero. If the PES packet length is set to zero, the PES packet can be of any length.
 	// A value of zero for the PES packet length can be used only when the PES packet payload is a video elementary stream.
-	if (pes_packet_length == 0) return;
-		
+	if (pes_packet_length == 6) return;
+
+	// truncate incomplete PES packets
+	if (pes_packet_length > size) pes_packet_length = size;		
+
 	uint8_t optional_pes_header_included = 0;
 	uint16_t optional_pes_header_length = 0;
 	// optional PES header marker bits (10.. ....)
@@ -527,7 +530,7 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 	// skip optional PES header and process each 46-byte teletext packet
 	uint16_t i = 7;
 	if (optional_pes_header_included) i += 3 + optional_pes_header_length;
-	while (i <= pes_packet_length) {
+	while (i <= pes_packet_length - 6) {
 		uint8_t data_unit_id = buffer[i++];
 		uint8_t data_unit_len = buffer[i++];
 
