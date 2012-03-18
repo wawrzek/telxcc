@@ -9,6 +9,10 @@ Some portions/inspirations:
 	(c) Jan Pantelje, submux-dvd
 	(c) Ragnar Sundblad, dvbtextsubs, VDR teletext subtitles plugin
 	(c) Scott T. Smith, dvdauthor
+	(c) 2007 Vladimir Voroshilov <voroshil@gmail.com>, mplayer
+
+Code contribution, bug fixes etc.:
+	Laurent Debacker (https://github.com/debackerl)
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -113,8 +117,7 @@ inline uint8_t unham_8_4(uint8_t a) {
 	return (UNHAM_8_4[a] & 0x0f);
 }
 
-// just decoding, no error corrections
-// I know, that isn't nice
+// ETS 300 706, chapter 8.3
 inline uint32_t unham_24_18(uint32_t a) {
 	return (((a & 0x04) >> 2) | ((a & 0x70) >> 3) | ((a & 0x7f00) >> 4) | ((a & 0x7f0000) >> 5));
 }
@@ -150,11 +153,11 @@ inline void ucs2_to_utf8(char *r, uint16_t ch) {
 }
 
 // check parity and translate any reasonable teletext character into ucs2
-inline uint16_t telx_to_ucs2(uint8_t c, uint8_t charset) {
+uint16_t telx_to_ucs2(uint8_t c) {
 	if (PARITY_8[c] == 0) return 32;
 
 	uint16_t r = c & 0x7f;
-	if (r >= 32) r = G0[charset][r - 32];
+	if (r >= 32) r = G0[0][r - 32];
 	return r;
 }
 
@@ -337,13 +340,32 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 		memset(page_buffer.text, 0x00, sizeof(page_buffer.text));
 		page_buffer.tainted = 0;
 		receiving_data = 1;
-		current_charset = charset;
+
+		// remap current Latin G0 chars
+		if (charset != current_charset) {
+			G0[0][0x23 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][0];
+			G0[0][0x24 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][1];
+			G0[0][0x40 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][2];
+			G0[0][0x5b - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][3];
+			G0[0][0x5c - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][4];
+			G0[0][0x5d - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][5];
+			G0[0][0x5e - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][6];
+			G0[0][0x5f - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][7];
+			G0[0][0x60 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][8];
+			G0[0][0x7b - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][9];
+			G0[0][0x7c - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][10];
+			G0[0][0x7d - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][11];
+			G0[0][0x7e - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][12];
+			current_charset = charset;
+
+			VERBOSE fprintf(stderr, "DEBUG: G0 Charset translation table remapped to G0 Latin National Subset ID %1x\n", current_charset);
+		}
 
 		// I know -- not needed; in subtitles we will never need disturbing teletext page status bar
 		// displaying tv station name, current time etc.
 		if (flag_suppress_header == 0) {
 			for (uint8_t i = 14; i < 40; i++)
-				page_buffer.text[y][i] = telx_to_ucs2(packet->data[i], current_charset);
+				page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
 		}
 	}
 	else if ((y >= 1) && (y <= 23) && (m == magazine(config_page))) {
@@ -355,7 +377,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 			// so page_buffer.text[y][i] may already contain any character received
 			// in frame number 26, skip original G0 character
 			for (uint8_t i = 0; i < 40; i++)
-				if (page_buffer.text[y][i] == 0x00) page_buffer.text[y][i] = telx_to_ucs2(packet->data[i], current_charset);
+				if (page_buffer.text[y][i] == 0x00) page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
 			page_buffer.tainted = 1;
 		}
 	}
@@ -389,7 +411,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 				// ETS 300 706, chapter 12.3.1, table 27: character from G2 set
 				if ((mode == 0x0f) && (row_address_group == 0)) {
 					x26_col = address;
-					if (data > 31) page_buffer.text[x26_row][x26_col] = G2[data - 32];
+					if (data > 31) page_buffer.text[x26_row][x26_col] = G2[0][data - 32];
 				}
 
 				// ETS 300 706, chapter 12.3.1, table 27: G0 character with diacritical mark
@@ -397,17 +419,17 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 					x26_col = address;
 
 					if ((data >= 65) && (data <= 90)) // A - Z
-						page_buffer.text[x26_row][x26_col] = ACCENTS[mode - 0x11][data - 65];
+						page_buffer.text[x26_row][x26_col] = G2_ACCENTS[mode - 0x11][data - 65];
 					else if ((data >= 97) && (data <= 122)) // a - z
-						page_buffer.text[x26_row][x26_col] = ACCENTS[mode - 0x11][data - 71];
+						page_buffer.text[x26_row][x26_col] = G2_ACCENTS[mode - 0x11][data - 71];
 					else
-						page_buffer.text[x26_row][x26_col] = G0[current_charset][data - 32];
+						page_buffer.text[x26_row][x26_col] = telx_to_ucs2(data);
 				}
 			}
 		}
 	}
 	else if (y == 28) {
-		VERBOSE fprintf(stderr, "DEBUG: Packet X/28 received; not yet implemented\n");
+		VERBOSE fprintf(stderr, "DEBUG: Packet X/28 received; not yet implemented; you won't be able to use secondary language\n");
 	}
 	else if (y == 29) {
 		VERBOSE fprintf(stderr, "DEBUG: Packet M/29 received; not yet implemented\n");
@@ -421,7 +443,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 				fprintf(stderr, "INFO: Programme Identification Data = ");
 				for (uint8_t i = 20; i < 40; i++) {
 					char u[4] = {0, 0, 0, 0};
-					ucs2_to_utf8(u, telx_to_ucs2(packet->data[i], current_charset));
+					ucs2_to_utf8(u, telx_to_ucs2(packet->data[i]));
 					fprintf(stderr, "%s", u);
 				}
 				fprintf(stderr, "\n");
@@ -541,7 +563,7 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 			// teletext payload has always size 44 bytes
 			if (data_unit_len == 0x2c) {
 				// reverse endianess (via lookup table), ETS 300 706, chapter 7.1
-				for (uint8_t j = 0; j < data_unit_len; j++) buffer[i + j] = REVERSE[buffer[i + j]];
+				for (uint8_t j = 0; j < data_unit_len; j++) buffer[i + j] = REVERSE_8[buffer[i + j]];
 
 				process_telx_packet(data_unit_id, (teletext_packet_payload_t *)&buffer[i], timestamp);
 			}
