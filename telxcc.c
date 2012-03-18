@@ -10,6 +10,7 @@ Some portions/inspirations:
 	(c) Ragnar Sundblad, dvbtextsubs, VDR teletext subtitles plugin
 	(c) Scott T. Smith, dvdauthor
 	(c) 2007 Vladimir Voroshilov <voroshil@gmail.com>, mplayer
+	(c) 2001, 2002, 2003, 2004, 2007 Michael H. Schimek, libzvbi -- Error correction functions
 
 Code contribution, bug fixes etc.:
 	Laurent Debacker (https://github.com/debackerl)
@@ -65,7 +66,9 @@ Further Documentation:
 #include <signal.h>
 #include <time.h>
 #include <inttypes.h>
-#include "tables.h"
+
+#include "tables_hamming.h"
+#include "tables_teletext.h"
 
 // size of a TS packet in bytes
 #define TS_PACKET_SIZE 188
@@ -119,7 +122,20 @@ inline uint8_t unham_8_4(uint8_t a) {
 
 // ETS 300 706, chapter 8.3
 inline uint32_t unham_24_18(uint32_t a) {
-	return (((a & 0x04) >> 2) | ((a & 0x70) >> 3) | ((a & 0x7f00) >> 4) | ((a & 0x7f0000) >> 5));
+	uint8_t B0 = a & 0xff;
+	uint8_t B1 = (a >> 8) & 0xff;
+	uint8_t B2 = (a >> 16) & 0xff;
+
+	uint8_t D1_D4 = UNHAM_24_18_D1_D4[B0 >> 2];
+	uint8_t D5_D11 = B1 & 0x7f;
+	uint8_t D12_D18 = B2 & 0x7f;
+
+	uint32_t d = D1_D4 | (D5_D11 << 4) | (D12_D18 << 11);
+	uint8_t ABCDEF = UNHAM_24_18_PAR[0][B0] ^ UNHAM_24_18_PAR[1][B1] ^ UNHAM_24_18_PAR[2][B2];
+	uint32_t r = d ^ UNHAM_24_18_ERR[ABCDEF];
+
+	//fprintf(stderr, "> UNHAM24/18 A=%08x, R=%08x, CHECK=%08x\n", a, r, (((a & 0x04) >> 2) | ((a & 0x70) >> 3) | ((a & 0x7f00) >> 4) | ((a & 0x7f0000) >> 5)));
+	return r;
 }
 
 inline void timestamp_to_srttime(uint64_t timestamp, char *buffer) {
@@ -157,7 +173,7 @@ uint16_t telx_to_ucs2(uint8_t c) {
 	if (PARITY_8[c] == 0) return 32;
 
 	uint16_t r = c & 0x7f;
-	if (r >= 32) r = G0[0][r - 32];
+	if (r >= 32) r = G0[LATIN][r - 32];
 	return r;
 }
 
@@ -279,7 +295,7 @@ inline uint8_t magazine(uint16_t page) {
 	return ((page >> 8) & 0xf);
 }
 
-void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet, uint64_t timestamp) {
+void process_telx_packet(data_unit_t data_unit_id, teletext_packet_payload_t *packet, uint64_t timestamp) {
 	// variable names conform to ETS 300 706, chapter 7.1.2
 	uint8_t address = (unham_8_4(packet->address[1]) << 4) | unham_8_4(packet->address[0]);
 	uint8_t m = address & 0x7;
@@ -300,7 +316,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 
 		if ((config_page == 0) && (flag_subtitle > 0) && (i < 0xff)) {
 			config_page = (m << 8) | (unham_8_4(packet->data[1]) << 4) | unham_8_4(packet->data[0]);
-			fprintf(stderr, "INFO: No teletext page specified, first received suitable page is %03x, not guaranteed\n", config_page);
+			fprintf(stderr, "- No teletext page specified, first received suitable page is %03x, not guaranteed\n", config_page);
 		}
 	}
 
@@ -342,30 +358,29 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 		receiving_data = 1;
 
 		// remap current Latin G0 chars
+		// TODO: refactore
 		if (charset != current_charset) {
-			G0[0][0x23 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][0];
-			G0[0][0x24 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][1];
-			G0[0][0x40 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][2];
-			G0[0][0x5b - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][3];
-			G0[0][0x5c - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][4];
-			G0[0][0x5d - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][5];
-			G0[0][0x5e - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][6];
-			G0[0][0x5f - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][7];
-			G0[0][0x60 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][8];
-			G0[0][0x7b - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][9];
-			G0[0][0x7c - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][10];
-			G0[0][0x7d - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][11];
-			G0[0][0x7e - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][12];
+			G0[LATIN][0x23 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 0];
+			G0[LATIN][0x24 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 1];
+			G0[LATIN][0x40 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 2];
+			G0[LATIN][0x5b - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 3];
+			G0[LATIN][0x5c - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 4];
+			G0[LATIN][0x5d - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 5];
+			G0[LATIN][0x5e - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 6];
+			G0[LATIN][0x5f - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 7];
+			G0[LATIN][0x60 - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 8];
+			G0[LATIN][0x7b - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][ 9];
+			G0[LATIN][0x7c - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][10];
+			G0[LATIN][0x7d - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][11];
+			G0[LATIN][0x7e - 0x20] = G0_LATIN_NATIONAL_SUBSETS[charset][12];
 			current_charset = charset;
-
-			VERBOSE fprintf(stderr, "DEBUG: G0 Charset translation table remapped to G0 Latin National Subset ID %1x\n", current_charset);
+			VERBOSE fprintf(stderr, "- G0 Charset translation table remapped to G0 Latin National Subset ID %1x\n", current_charset);
 		}
 
 		// I know -- not needed; in subtitles we will never need disturbing teletext page status bar
 		// displaying tv station name, current time etc.
 		if (flag_suppress_header == 0) {
-			for (uint8_t i = 14; i < 40; i++)
-				page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
+			for (uint8_t i = 14; i < 40; i++) page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
 		}
 	}
 	else if ((y >= 1) && (y <= 23) && (m == magazine(config_page))) {
@@ -376,8 +391,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 			// ETS 300 706, annex B.2.2: Packets with Y = 26 shall be transmitted before any packets with Y = 1 to Y = 25;
 			// so page_buffer.text[y][i] may already contain any character received
 			// in frame number 26, skip original G0 character
-			for (uint8_t i = 0; i < 40; i++)
-				if (page_buffer.text[y][i] == 0x00) page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
+			for (uint8_t i = 0; i < 40; i++) if (page_buffer.text[y][i] == 0x00) page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
 			page_buffer.tainted = 1;
 		}
 	}
@@ -389,8 +403,11 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 			uint8_t x26_col = 0;
 
 			uint32_t decoded[13] = { 0 };
-			for (uint8_t i = 1, j = 0; i < 40; i += 3, j++)
+			for (uint8_t i = 1, j = 0; i < 40; i += 3, j++) {
 				decoded[j] = unham_24_18((packet->data[i + 2] << 16) | (packet->data[i + 1] << 8) | packet->data[i]);
+				// invalid data
+				if ((decoded[j] & 0x80000000) > 0) decoded[j] = 0;
+			}
 
 			for (uint8_t j = 0; j < 13; j++) {
 				uint8_t data = (decoded[j] & 0x3f800) >> 11;
@@ -418,21 +435,21 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 				if ((mode >= 0x11) && (mode <= 0x1f) && (row_address_group == 0)) {
 					x26_col = address;
 
-					if ((data >= 65) && (data <= 90)) // A - Z
-						page_buffer.text[x26_row][x26_col] = G2_ACCENTS[mode - 0x11][data - 65];
-					else if ((data >= 97) && (data <= 122)) // a - z
-						page_buffer.text[x26_row][x26_col] = G2_ACCENTS[mode - 0x11][data - 71];
-					else
-						page_buffer.text[x26_row][x26_col] = telx_to_ucs2(data);
+					// A - Z
+					if ((data >= 65) && (data <= 90)) page_buffer.text[x26_row][x26_col] = G2_ACCENTS[mode - 0x11][data - 65];
+					// a - z
+					else if ((data >= 97) && (data <= 122)) page_buffer.text[x26_row][x26_col] = G2_ACCENTS[mode - 0x11][data - 71];
+					// other
+					else page_buffer.text[x26_row][x26_col] = telx_to_ucs2(data);
 				}
 			}
 		}
 	}
 	else if (y == 28) {
-		VERBOSE fprintf(stderr, "DEBUG: Packet X/28 received; not yet implemented; you won't be able to use secondary language\n");
+		VERBOSE fprintf(stderr, "- Packet X/28 received; not yet implemented; you won't be able to use secondary language\n");
 	}
 	else if (y == 29) {
-		VERBOSE fprintf(stderr, "DEBUG: Packet M/29 received; not yet implemented\n");
+		VERBOSE fprintf(stderr, "- Packet M/29 received; not yet implemented; you won't be able to use secondary language\n");
 	}
 	else if ((y == 30) && (m == 8)) {
 		// ETS 300 706, chapter 9.8: Broadcast Service Data Packets
@@ -440,7 +457,7 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 		if (programme_title_processed == 0) {
 			// ETS 300 706, chapter 9.8.1: Packet 8/30 Format 1
 			if (unham_8_4(packet->data[0]) < 2) {
-				fprintf(stderr, "INFO: Programme Identification Data = ");
+				fprintf(stderr, "- Programme Identification Data = ");
 				for (uint8_t i = 20; i < 40; i++) {
 					char u[4] = {0, 0, 0, 0};
 					ucs2_to_utf8(u, telx_to_ucs2(packet->data[i]));
@@ -469,9 +486,9 @@ void process_telx_packet(uint8_t data_unit_id, teletext_packet_payload_t *packet
 				// 4th step: conversion to time_t
 				time_t t0 = (time_t)t;
 				// ctime output itself is \n-ended
-				fprintf(stderr, "INFO: Universal Time Co-ordinated = %s", ctime(&t0));
+				fprintf(stderr, "- Universal Time Co-ordinated = %s", ctime(&t0));
 
-				VERBOSE fprintf(stderr, "INFO: Transmission mode = %s\n", (transmission_mode == 1 ? "serial" : "parallel"));
+				VERBOSE fprintf(stderr, "- Transmission mode = %s\n", (transmission_mode == 1 ? "serial" : "parallel"));
 
 				programme_title_processed = 1;
 			}
@@ -515,10 +532,10 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 	if (using_pts == 255) {
 		if ((optional_pes_header_included == 1) && ((buffer[7] & 0x80) > 0)) {
 			using_pts = 1;
-			VERBOSE fprintf(stderr, "INFO: PID 0xbd PTS available\n");
+			VERBOSE fprintf(stderr, "- PID 0xbd PTS available\n");
 		} else {
 			using_pts = 0;
-			VERBOSE fprintf(stderr, "INFO: PID 0xbd PTS unavailable, using TS PCR\n");
+			VERBOSE fprintf(stderr, "- PID 0xbd PTS unavailable, using TS PCR\n");
 		}
 	}
 
@@ -578,7 +595,7 @@ uint8_t exit_request = 0;
 
 void signal_handler(int sig) {
 	if ((sig == SIGINT) || (sig == SIGTERM)) {
-		fprintf(stderr, "WARNING: SIGINT/SIGTERM received, performing graceful exit\n");
+		fprintf(stderr, "- SIGINT/SIGTERM received, performing graceful exit\n");
 		exit_request = 1;
 	}
 }
@@ -627,7 +644,7 @@ int main(int argc, const char *argv[]) {
 		else if (strcmp(argv[i], "-v") == 0)
 			config_verbose = 1;
 		else {
-			fprintf(stderr, "ERROR: Unknown option %s\n", argv[i]);
+			fprintf(stderr, "- Unknown option %s\n", argv[i]);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -636,14 +653,14 @@ int main(int argc, const char *argv[]) {
 	{
 		const uint32_t ENDIANNESS_TEST = 0xdeadbeef;
 		if (*(const uint8_t *)&ENDIANNESS_TEST != 0xef) {
-			fprintf(stderr, "WARNING: This application was tested only at Little Endian systems!\n");
+			fprintf(stderr, "- This application was tested only at Little Endian systems!\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 
 	// teletext page number out of range
 	if ((config_page != 0) && ((config_page < 100) || (config_page > 899))) {
-		fprintf(stderr, "ERROR: Teletext page number could not be lower than 100 or higher than 899\n");
+		fprintf(stderr, "- Teletext page number could not be lower than 100 or higher than 899\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -714,7 +731,7 @@ int main(int argc, const char *argv[]) {
 
 		// not TS packet?
 		if (ts_sync != 0x47) {
-			fprintf(stderr, "ERROR: invalid TS packet header\n");
+			fprintf(stderr, "- Invalid TS packet header\n");
 			exit(EXIT_FAILURE);
 		}
 
@@ -726,7 +743,7 @@ int main(int argc, const char *argv[]) {
 
 		// uncorrectable error?
 		if (ts_transport_error > 0) {
-			VERBOSE fprintf(stderr, "WARNING: uncorrectable TS packet error (received CC %1x)\n", ts_continuity_counter);
+			VERBOSE fprintf(stderr, "- Uncorrectable TS packet error (received CC %1x)\n", ts_continuity_counter);
 			continue;
 		}
 
@@ -734,7 +751,7 @@ int main(int argc, const char *argv[]) {
 		if (config_tid == 0) {
 			if ((ts_payload_unit_start > 0) && ((ts_buffer[4] == 0x00) && (ts_buffer[5] == 0x00) && (ts_buffer[6] == 0x01) && (ts_buffer[7] == 0xbd))) {
 				config_tid = ts_pid;
-				fprintf(stderr, "INFO: No teletext PID specified, first received suitable stream PID is %"PRIu16" (0x%x), not guaranteed\n", config_tid, config_tid);
+				fprintf(stderr, "- No teletext PID specified, first received suitable stream PID is %"PRIu16" (0x%x), not guaranteed\n", config_tid, config_tid);
 			}
 			else continue;
 		}
@@ -747,7 +764,7 @@ int main(int argc, const char *argv[]) {
 			if (af_discontinuity == 0) {
 				continuity_counter = (continuity_counter + 1) % 16;
 				if (ts_continuity_counter != continuity_counter) {
-					VERBOSE fprintf(stderr, "WARNING: missing TS packet, flushing pes_buffer (expected CC %1x, received CC %1x, TS discontinuity %s, TS priority %s)\n",
+					VERBOSE fprintf(stderr, "- Missing TS packet, flushing pes_buffer (expected CC %1x, received CC %1x, TS discontinuity %s, TS priority %s)\n",
 						continuity_counter, ts_continuity_counter, (af_discontinuity ? "YES" : "NO"), (ts_transport_priority ? "YES" : "NO"));
 					pes_counter = 0;
 					continuity_counter = 255;
@@ -770,12 +787,12 @@ int main(int argc, const char *argv[]) {
 			pes_counter += TS_PACKET_PAYLOAD_SIZE;
 			packet_counter++;
 		}
-		else VERBOSE fprintf(stderr, "WARNING: pes packet size exceeds pes_buffer size, probably not teletext stream\n");
+		else VERBOSE fprintf(stderr, "- PES packet size exceeds pes_buffer size, probably not teletext stream\n");
 	}
 
 	VERBOSE {
-		if (frames_produced == 0) fprintf(stderr, "INFO: No frames produced. CC teletext page number was probably wrong.\n");
-		fprintf(stderr, "INFO: There were some CC data carried via pages: ");
+		if (frames_produced == 0) fprintf(stderr, "- No frames produced. CC teletext page number was probably wrong.\n");
+		fprintf(stderr, "- There were some CC data carried via pages: ");
 		// We ignore i = 0xff, because 0xffs are teletext ending frames
 		for (uint16_t i = 0; i < 255; i++)
 			for (uint8_t j = 0; j < 8; j++) {
@@ -791,7 +808,7 @@ int main(int argc, const char *argv[]) {
 		frames_produced++;
 	}
 
-	fprintf(stderr, "INFO: Done (%"PRIu32" teletext packets processed, %"PRIu32" SRT frames written)\n", packet_counter, frames_produced);
+	fprintf(stderr, "- Done (%"PRIu32" teletext packets processed, %"PRIu32" SRT frames written)\n", packet_counter, frames_produced);
 	fprintf(stderr, "\n");
 
 	return EXIT_SUCCESS;
