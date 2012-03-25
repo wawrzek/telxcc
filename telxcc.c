@@ -260,15 +260,13 @@ void process_page(const teletext_page_t *page_buffer) {
 			// boxed area end
 			if (v == 0x0a) {
 				in_boxed_area = 0;
-				col = 38;
 				continue;
 			}
 
-			// discard nonprintable chars
-			if (v < 32) continue;
-
 			// processing chars in boxed area
 			if (in_boxed_area == 1) {
+				if (v < 32) continue;
+
 				char u[4] = {0, 0, 0, 0};
 				ucs2_to_utf8(u, v);
 				fprintf(stdout, "%s", u);
