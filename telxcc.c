@@ -254,22 +254,20 @@ void process_page(const teletext_page_t *page_buffer) {
 			// boxed area start
 			if (v == 0x0b) {
 				in_boxed_area = 1;
-				continue;
 			}
 
 			// boxed area end
 			if (v == 0x0a) {
 				in_boxed_area = 0;
-				continue;
 			}
 
 			// processing chars in boxed area
 			if (in_boxed_area == 1) {
-				if (v < 32) continue;
-
-				char u[4] = {0, 0, 0, 0};
-				ucs2_to_utf8(u, v);
-				fprintf(stdout, "%s", u);
+				if (v >= 32) {
+					char u[4] = {0, 0, 0, 0};
+					ucs2_to_utf8(u, v);
+					fprintf(stdout, "%s", u);
+				}
 			}
 			
 			// ETS 300 706, chapter 12.2: Spacing attributes: A Start Box is cancelled by an End Box code (0/A)
