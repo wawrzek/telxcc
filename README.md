@@ -1,6 +1,6 @@
 # telxcc
 
-telxcc is utility extracting teletext Closed Captions from Transport Streams (DVB-T) into SRT text files.
+telxcc is utility extracting teletext Closed Captions from Transport Streams (DVB) into SRT text files.
 
 telxcc is
 
@@ -31,7 +31,7 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
     telxcc - teletext closed captioning decoder
     (c) Petr Kutalek <petr.kutalek@forers.com>, 2011-2012; Licensed under the GPL.
     Please consider making a Paypal donation to support our free GNU/GPL software: http://fore.rs/donate/telxcc
-    Built on Mar 17 2012
+    Built on Mar 25 2012
 
     Usage: telxcc [-h] | [-p PAGE] [-t TID] [-o OFFSET] [-n] [-1] [-c] [-v]
       STDIN       transport stream
@@ -43,7 +43,7 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
       -o OFFSET   subtitles offset in seconds (default: 0.0)
       -n          do not print UTF-8 BOM characters at the beginning of output
       -1          produce at least one (dummy) frame
-      -c          output colour information in font HTML tags
+      -c          output colour information in <font/> HTML tags
                     (colours are supported by MPC, MPC HC, VLC, KMPlayer, VSFilter, ffdshow etc.)
       -v          be verbose (default: verboseness turned off, without being quiet)
 
@@ -53,15 +53,16 @@ telxcc has no lib dependencies and is easy to build and run on Linux, Mac and Wi
     telxcc - teletext closed captioning decoder
     (c) Petr Kutalek <petr.kutalek@forers.com>, 2011-2012; Licensed under the GPL.
     Please consider making a Paypal donation to support our free GNU/GPL software: http://fore.rs/donate/telxcc
-    Built on Mar 17 2012
+    Built on Mar 25 2012
 
-    INFO: No teletext PID specified, first received suitable stream PID is 576 (0x240), not guaranteed
-    INFO: PID 0xbd PTS available
-    INFO: Programme Identification Data = NRK TV
-    INFO: Universal Time Co-ordinated = Wed Feb 15 19:14:04 2012
-    INFO: Transmission mode = serial
-    INFO: There were some CC data carried via pages: 333 444 777
-    INFO: Done (562995 teletext packets processed, 253 SRT frames written)
+    - No teletext PID specified, first received suitable stream PID is 576 (0x240), not guaranteed
+    - PID 0xbd PTS available
+    - Programme Identification Data = NRK TV
+    - Universal Time Co-ordinated = Wed Feb 15 19:14:04 2012
+    - Transmission mode = serial
+    - G0 Charset translation table remapped to G0 Latin National Subset ID 2
+    - There were some CC data carried via pages: 333 444 777
+    - Done (562995 teletext packets processed, 629 SRT frames written)
 
     $ _
 
@@ -78,4 +79,4 @@ telxcc is free GNU/GPL-licensed software. However if you use it, please consider
 
 ## Support
 
-Any bug reports are very welcome. Unfortunately I am unable to provide you with free support.
+Any bug reports are very welcome. Unfortunately I am unable to provide you with free support. Sorry.
