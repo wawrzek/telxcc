@@ -211,20 +211,30 @@ void process_page(const teletext_page_t *page_buffer) {
 
 	// process data
 	for (uint8_t row = 1; row < 25; row++) {
+		// we have <font/> tag opened, must be closed before the end of the line
 		uint8_t font_tag_opened = 0;
+		// we are in visible boxed aream should print chars
 		uint8_t in_boxed_area = 0;
 		// ETS 300 706, chapter 12.2: Alpha White ("Set-After") - Start-of-row default condition.
 		uint8_t foreground_color = 0x7;
+		// trim empty chars at the beginning of the line
+		uint8_t line_has_started = 0;
 
 		// skip empty lines
-		uint8_t line_is_empty = 1;
-		for (uint8_t col = 0; col < 40; col++)
-			if (page_buffer->text[row][col] == 0x0b) {
+		// 2 = empty line, not even start box found
+		// 1 = empty line, however start box found
+		uint8_t line_is_empty = 2;
+		for (uint8_t col = 0; col < 40; col++) {
+			if ((page_buffer->text[row][col] == 0x0b) && (line_is_empty == 2)) {
+				line_is_empty = 1;
+			}
+			if ((page_buffer->text[row][col] > 32) && (line_is_empty == 1)) {
 				line_is_empty = 0;
 				goto line_is_empty;
 			}
+		}
 		line_is_empty:
-		if (line_is_empty == 1) continue;
+		if (line_is_empty > 0) continue;
 
 		for (uint8_t col = 0; col < 40; col++) {
 			uint16_t v = page_buffer->text[row][col];
@@ -263,13 +273,15 @@ void process_page(const teletext_page_t *page_buffer) {
 
 			// processing chars in boxed area
 			if (in_boxed_area == 1) {
-				if (v >= 32) {
+				if ((v > 32) || ((v == 32) && (line_has_started == 1))) {
+					line_has_started = 1;
+
 					char u[4] = {0, 0, 0, 0};
 					ucs2_to_utf8(u, v);
 					fprintf(stdout, "%s", u);
 				}
 			}
-			
+
 			// ETS 300 706, chapter 12.2: Spacing attributes: A Start Box is cancelled by an End Box code (0/A)
 			// _or_by_the_start_of_a_new_row_.
 			// last column -- close font tag
