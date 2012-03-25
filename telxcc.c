@@ -229,16 +229,6 @@ void process_page(const teletext_page_t *page_buffer) {
 		for (uint8_t col = 0; col < 40; col++) {
 			uint16_t v = page_buffer->text[row][col];
 
-			// last column -- close font tag
-			if (col == 39) {
-				if ((config_colours == 1) && (font_tag_opened == 1)) {
-					fprintf(stdout, "</font> ");
-					font_tag_opened = 0;
-				}
-				in_boxed_area = 0;
-				continue;
-			}
-
 			// colours
 			// white is default as stated in ETS 300 706, chapter 12.2
 			// black is considered as white for telxcc purpose
@@ -282,6 +272,17 @@ void process_page(const teletext_page_t *page_buffer) {
 				char u[4] = {0, 0, 0, 0};
 				ucs2_to_utf8(u, v);
 				fprintf(stdout, "%s", u);
+			}
+			
+			// ETS 300 706, chapter 12.2: Spacing attributes: A Start Box is cancelled by an End Box code (0/A)
+			// _or_by_the_start_of_a_new_row_.
+			// last column -- close font tag
+			if (col == 39) {
+				if ((config_colours == 1) && (font_tag_opened == 1)) {
+					fprintf(stdout, "</font> ");
+					font_tag_opened = 0;
+				}
+				in_boxed_area = 0;
 			}
 		}
 		fprintf(stdout, "\r\n");
