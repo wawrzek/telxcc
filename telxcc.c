@@ -211,88 +211,83 @@ void process_page(const teletext_page_t *page_buffer) {
 
 	// process data
 	for (uint8_t row = 1; row < 25; row++) {
-		// we have <font/> tag opened, must be closed before the end of the line
-		uint8_t font_tag_opened = 0;
-		// we are in visible boxed aream should print chars
-		uint8_t in_boxed_area = 0;
-		// ETS 300 706, chapter 12.2: Alpha White ("Set-After") - Start-of-row default condition.
-		uint8_t foreground_color = 0x7;
-		// trim empty chars at the beginning of the line
-		uint8_t line_has_started = 0;
+		// anchors for string trimming purpose
+		uint8_t col_start = 40;
+		uint8_t col_stop = 40;
 
-		// skip empty lines
-		// 2 = empty line, not even start box found
-		// 1 = empty line, however start box found
-		uint8_t line_is_empty = 2;
-		for (uint8_t col = 0; col < 40; col++) {
-			if ((page_buffer->text[row][col] == 0x0b) && (line_is_empty == 2)) {
-				line_is_empty = 1;
+		for (int8_t col = 39; col >= 0; col--)
+			if (page_buffer->text[row][col] == 0xb) {
+				col_start = col;
+				break;
 			}
-			if ((page_buffer->text[row][col] > 32) && (line_is_empty == 1)) {
-				line_is_empty = 0;
-				goto line_is_empty;
+		// line is empty
+		if (col_start > 39) continue;
+
+		for (uint8_t col = col_start + 1; col <= 39; col++) {
+			if (page_buffer->text[row][col] > 32) {
+				if (col_stop > 39) col_start = col;
+				col_stop = col;
 			}
+			if (page_buffer->text[row][col] == 0xa) break;
 		}
-		line_is_empty:
-		if (line_is_empty > 0) continue;
+		// line is empty
+		if (col_stop > 39) continue;
 
-		for (uint8_t col = 0; col < 40; col++) {
+		// ETS 300 706, chapter 12.2: Alpha White ("Set-After") - Start-of-row default condition.
+		// used for colour changes _before_ start box mark
+		uint8_t foreground_color = 0x7;
+		uint8_t font_tag_opened = 0;
+
+		for (uint8_t col = 0; col <= col_stop; col++) {
 			uint16_t v = page_buffer->text[row][col];
 
-			// colours
-			// white is default as stated in ETS 300 706, chapter 12.2
-			// black is considered as white for telxcc purpose
-			// telxcc writes <font/> tags only when needed
-			// black(0), red, green, yellow, blue, magenta, cyan, white
-			if ((v >= 0x01) && (v <= 0x07)) {
-				if (config_colours == 1) {
-					if (font_tag_opened == 1) {
-						fprintf(stdout, "</font> ");
-						font_tag_opened = 0;
-					}
-					if (v != foreground_color) {
-						fprintf(stdout, "<font color=\"%s\">", COLOURS[v]);
-						font_tag_opened = 1;
-						foreground_color = v;
-					}
+			if (col < col_start) {
+				if (v <= 0x7) foreground_color = v;
+			}
+
+			if (col == col_start) {
+				if ((foreground_color != 0x7) && (config_colours == 1)) {
+					fprintf(stdout, "<font color=\"%s\">", COLOURS[foreground_color]);
+					font_tag_opened = 1;
 				}
-				// ETS 300 706, chapter 12.2: Unless operating in "Hold Mosaics" mode,
-				// each character space occupied by a spacing attribute is displayed as a SPACE.
-				else v = 32;
 			}
 
-			// boxed area start
-			if (v == 0x0b) {
-				in_boxed_area = 1;
-			}
+			if (col >= col_start) {
+				// colours
+				// white is default as stated in ETS 300 706, chapter 12.2
+				// black(0), red, green, yellow, blue, magenta, cyan, white
+				if (v <= 0x7) {
+					if (config_colours == 1) {
+						if (font_tag_opened == 1) {
+							fprintf(stdout, "</font> ");
+							font_tag_opened = 0;
+						}
 
-			// boxed area end
-			if (v == 0x0a) {
-				in_boxed_area = 0;
-			}
+						// black is considered as white for telxcc purpose
+						// telxcc writes <font/> tags only when needed
+						if ((v > 0x0) && (v < 0x7)) {
+							fprintf(stdout, "<font color=\"%s\">", COLOURS[v]);
+							font_tag_opened = 1;
+						}
+					}
+					// ETS 300 706, chapter 12.2: Unless operating in "Hold Mosaics" mode,
+					// each character space occupied by a spacing attribute is displayed as a SPACE.
+					else v = 32;
+				}
 
-			// processing chars in boxed area
-			if (in_boxed_area == 1) {
-				if ((v > 32) || ((v == 32) && (line_has_started == 1))) {
-					line_has_started = 1;
-
+				if (v >= 32) {
 					char u[4] = {0, 0, 0, 0};
 					ucs2_to_utf8(u, v);
 					fprintf(stdout, "%s", u);
 				}
 			}
-
-			// ETS 300 706, chapter 12.2: Spacing attributes: A Start Box is cancelled by an End Box code (0/A)
-			// _or_by_the_start_of_a_new_row_.
-			// last column -- close font tag
-			if (col == 39) {
-				if ((config_colours == 1) && (font_tag_opened == 1)) {
-					fprintf(stdout, "</font> ");
-					font_tag_opened = 0;
-				}
-				in_boxed_area = 0;
-			}
 		}
+
+		if ((config_colours == 1) && (font_tag_opened == 1)) {
+			fprintf(stdout, "</font>");
+			font_tag_opened = 0;
+		}
+
 		fprintf(stdout, "\r\n");
 	}
 
