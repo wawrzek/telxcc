@@ -134,7 +134,6 @@ inline uint32_t unham_24_18(uint32_t a) {
 	uint8_t ABCDEF = UNHAM_24_18_PAR[0][B0] ^ UNHAM_24_18_PAR[1][B1] ^ UNHAM_24_18_PAR[2][B2];
 	uint32_t r = d ^ UNHAM_24_18_ERR[ABCDEF];
 
-	//fprintf(stderr, "> UNHAM24/18 A=%08x, R=%08x, CHECK=%08x\n", a, r, (((a & 0x04) >> 2) | ((a & 0x70) >> 3) | ((a & 0x7f00) >> 4) | ((a & 0x7f0000) >> 5)));
 	return r;
 }
 
@@ -170,10 +169,10 @@ inline void ucs2_to_utf8(char *r, uint16_t ch) {
 
 // check parity and translate any reasonable teletext character into ucs2
 uint16_t telx_to_ucs2(uint8_t c) {
-	if (PARITY_8[c] == 0) return 32;
+	if (PARITY_8[c] == 0) return 0x20;
 
 	uint16_t r = c & 0x7f;
-	if (r >= 32) r = G0[LATIN][r - 32];
+	if (r >= 0x20) r = G0[LATIN][r - 0x20];
 	return r;
 }
 
@@ -224,7 +223,7 @@ void process_page(const teletext_page_t *page_buffer) {
 		if (col_start > 39) continue;
 
 		for (uint8_t col = col_start + 1; col <= 39; col++) {
-			if (page_buffer->text[row][col] > 32) {
+			if (page_buffer->text[row][col] > 0x20) {
 				if (col_stop > 39) col_start = col;
 				col_stop = col;
 			}
@@ -235,6 +234,8 @@ void process_page(const teletext_page_t *page_buffer) {
 
 		// ETS 300 706, chapter 12.2: Alpha White ("Set-After") - Start-of-row default condition.
 		// used for colour changes _before_ start box mark
+		// white is default as stated in ETS 300 706, chapter 12.2
+		// black(0), red(1), green(2), yellow(3), blue(4), magenta(5), cyan(6), white(7)
 		uint8_t foreground_color = 0x7;
 		uint8_t font_tag_opened = 0;
 
@@ -253,10 +254,9 @@ void process_page(const teletext_page_t *page_buffer) {
 			}
 
 			if (col >= col_start) {
-				// colours
-				// white is default as stated in ETS 300 706, chapter 12.2
-				// black(0), red, green, yellow, blue, magenta, cyan, white
 				if (v <= 0x7) {
+					// ETS 300 706, chapter 12.2: Unless operating in "Hold Mosaics" mode,
+					// each character space occupied by a spacing attribute is displayed as a SPACE.
 					if (config_colours == 1) {
 						if (font_tag_opened == 1) {
 							fprintf(stdout, "</font> ");
@@ -270,12 +270,10 @@ void process_page(const teletext_page_t *page_buffer) {
 							font_tag_opened = 1;
 						}
 					}
-					// ETS 300 706, chapter 12.2: Unless operating in "Hold Mosaics" mode,
-					// each character space occupied by a spacing attribute is displayed as a SPACE.
-					else v = 32;
+					else v = 0x20;
 				}
 
-				if (v >= 32) {
+				if (v >= 0x20) {
 					char u[4] = {0, 0, 0, 0};
 					ucs2_to_utf8(u, v);
 					fprintf(stdout, "%s", u);
@@ -381,11 +379,13 @@ void process_telx_packet(data_unit_t data_unit_id, teletext_packet_payload_t *pa
 			VERBOSE fprintf(stderr, "- G0 Charset translation table remapped to G0 Latin National Subset ID %1x\n", current_charset);
 		}
 
+		/*
 		// I know -- not needed; in subtitles we will never need disturbing teletext page status bar
 		// displaying tv station name, current time etc.
 		if (flag_suppress_header == 0) {
 			for (uint8_t i = 14; i < 40; i++) page_buffer.text[y][i] = telx_to_ucs2(packet->data[i]);
 		}
+		*/
 	}
 	else if ((y >= 1) && (y <= 23) && (m == magazine(config_page))) {
 		if ((transmission_mode == TRANSMISSION_MODE_SERIAL) && (data_unit_id != DATA_UNIT_EBU_TELETEXT_SUBTITLE)) return;
@@ -432,7 +432,7 @@ void process_telx_packet(data_unit_t data_unit_id, teletext_packet_payload_t *pa
 				// ETS 300 706, chapter 12.3.1, table 27: character from G2 set
 				if ((mode == 0x0f) && (row_address_group == 0)) {
 					x26_col = address;
-					if (data > 31) page_buffer.text[x26_row][x26_col] = G2[0][data - 32];
+					if (data > 31) page_buffer.text[x26_row][x26_col] = G2[0][data - 0x20];
 				}
 
 				// ETS 300 706, chapter 12.3.1, table 27: G0 character with diacritical mark
@@ -569,6 +569,7 @@ void process_pes_packet(uint8_t *buffer, uint16_t size) {
 		t0 = t;
 		initialized = 1;
 	}
+	// TODO: How the hell have I calculated this constant?!! It's correct, however I have no idea why. :-D
 	if (t < t0) delta += 95443718;
 	t0 = t;
 	uint64_t timestamp = t + delta;
@@ -726,10 +727,10 @@ int main(int argc, const char *argv[]) {
 				pts |= (ts_buffer[8] << 9);
 				pts |= (ts_buffer[9] << 1);
 				pts |= (ts_buffer[10] >> 7);
-				global_timestamp = pts/90;
+				global_timestamp = pts / 90;
 				pts = ((ts_buffer[10] & 0x01) << 8);
 				pts |= ts_buffer[11];
-				global_timestamp += pts/27000;
+				global_timestamp += pts / 27000;
 			}
 		}
 
