@@ -8,8 +8,10 @@ Some portions/inspirations:
 	(c) Jan Pantelje, submux-dvd
 	(c) Ragnar Sundblad, dvbtextsubs, VDR teletext subtitles plugin
 	(c) Scott T. Smith, dvdauthor
+	(c) 2007 Vladimir Voroshilov <voroshil@gmail.com>, mplayer
+	(c) 2001, 2002, 2003, 2004, 2007 Michael H. Schimek, libzvbi -- Error correction functions
 
-Code contribution:
+Code contribution, bug fixes etc.:
 	Laurent Debacker (https://github.com/debackerl)
 
 This program is free software; you can redistribute it and/or modify
