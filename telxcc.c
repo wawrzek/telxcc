@@ -207,7 +207,7 @@ void process_page(const teletext_page_t *page_buffer) {
 	timecode_hide[12] = 0;
 
 	// print SRT frame
-	fprintf(stdout, "%"PRIu32"\r\n%s --> %s\r\n", ++frames_produced, timecode_show, timecode_hide);
+	//fprintf(stdout, "%"PRIu32"\r\n%s --> %s\r\n", ++frames_produced, timecode_show, timecode_hide);
 
 	// process data
 	for (uint8_t row = 1; row < 25; row++) {
@@ -284,10 +284,10 @@ void process_page(const teletext_page_t *page_buffer) {
 				fprintf(stdout, "%s", u);
 			}
 		}
-		fprintf(stdout, "\r\n");
+		fprintf(stdout, "\n");
 	}
-
-	fprintf(stdout, "\r\n");
+    // probably EMPTY LINE BETWEEN FRAMES
+	// fprintf(stdout, "\r\n");
 	fflush(stdout);
 }
 
